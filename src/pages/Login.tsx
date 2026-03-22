@@ -26,7 +26,7 @@ const Login = () => {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md shadow-card">
         <CardHeader className="text-center space-y-2">
-          <p className="text-destructive font-bold text-lg">TEST</p>
+          
           <CardTitle className="text-2xl font-bold">COD Finance</CardTitle>
           <p className="text-muted-foreground">Sign in to your account</p>
         </CardHeader>

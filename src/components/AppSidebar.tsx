@@ -37,7 +37,7 @@ export function AppSidebar() {
         <div className="px-4 py-5">
           {!collapsed && (
             <h1 className="text-lg font-bold text-sidebar-foreground tracking-tight">
-              <span className="text-destructive">TEST</span> COD Finance
+              COD Finance
             </h1>
           )}
         </div>
