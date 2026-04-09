@@ -121,10 +121,13 @@ const UsersPage = () => {
   };
 
   const handleDeleteUser = async (user: any) => {
-    const { error } = await supabase.from('user_roles').delete().eq('user_id', user.id);
-    if (error) { toast.error(error.message); return; }
-    const { error: profileError } = await supabase.from('profiles').delete().eq('id', user.id);
-    if (profileError) { toast.error(profileError.message); return; }
+    const { data, error } = await supabase.functions.invoke('delete-user', {
+      body: { user_id: user.id },
+    });
+    if (error || data?.error) {
+      toast.error(data?.error || error?.message || 'Failed to delete user');
+      return;
+    }
     await logAction({ action: 'delete', entity: 'user', entityId: user.id, details: `User: ${user.full_name}` });
     toast.success('User deleted');
     fetchUsers();
