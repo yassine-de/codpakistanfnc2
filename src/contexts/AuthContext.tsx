@@ -70,8 +70,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error };
+    const { error, data } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { error };
+    
+    // Check if user profile is inactive
+    if (data.user) {
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('status')
+        .eq('id', data.user.id)
+        .single();
+      
+      if (profileData?.status === 'inactive') {
+        await supabase.auth.signOut();
+        return { error: { message: 'Your account has been deactivated. Please contact an administrator.' } };
+      }
+    }
+    
+    return { error: null };
   };
 
   const signOut = async () => {
