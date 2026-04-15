@@ -16,7 +16,7 @@ import { Plus, Search, Download, Pencil, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { exportToCSV, exportToExcel } from '@/lib/exportUtils';
 
-const CATEGORIES = ['Shipping Company Payout'];
+const CATEGORIES = ['Shipping Company Payout', 'Sourcing', 'Other'];
 
 const Revenue = () => {
   const { user, canEdit, isAdmin } = useAuth();
