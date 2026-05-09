@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, TrendingUp, TrendingDown, Wallet, Users, FileText, History, CreditCard, LogOut, User,
+  LayoutDashboard, TrendingUp, TrendingDown, Wallet, Users, FileText, History, CreditCard, LogOut, User, Settings, Store,
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useLocation } from 'react-router-dom';
@@ -19,6 +19,8 @@ const mainItems = [
 
 const adminItems = [
   { title: 'Users', url: '/users', icon: Users },
+  { title: 'Sellers', url: '/sellers', icon: Store },
+  { title: 'Settings', url: '/settings', icon: Settings },
 ];
 
 const otherItems = [

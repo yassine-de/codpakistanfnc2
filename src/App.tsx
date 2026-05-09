@@ -18,6 +18,8 @@ import UsersPage from "./pages/UsersPage";
 import Reports from "./pages/Reports";
 import HistoryPage from "./pages/HistoryPage";
 import Profile from "./pages/Profile";
+import Settings from "./pages/Settings";
+import Sellers from "./pages/Sellers";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -50,6 +52,8 @@ const AppRoutes = () => (
     <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
     <Route path="/history" element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
     <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+    <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+    <Route path="/sellers" element={<ProtectedRoute><Sellers /></ProtectedRoute>} />
     <Route path="*" element={<NotFound />} />
   </Routes>
 );

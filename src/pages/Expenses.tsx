@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuditLog } from '@/hooks/useAuditLog';
+import { useSettings } from '@/hooks/useSettings';
 import { DataTable } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,14 +17,15 @@ import { Plus, Search, Upload, ExternalLink, Download, Trash2, Pencil } from 'lu
 import { format } from 'date-fns';
 import { exportToCSV, exportToExcel } from '@/lib/exportUtils';
 
-const CATEGORIES = ['Ads', 'Product Cost', 'Shipping Cost', 'Packaging', 'Refund', 'Tools / Software', 'Salaries / Labor', 'Bank Fees', 'Partner Withdrawal', 'Other'];
-const AD_PLATFORMS = ['Meta', 'TikTok', 'Snapchat', 'Google', 'WhatsApp'];
+const CATEGORIES = ['Product Cost', 'Shipping Cost', 'Debit Seller', 'Other'];
 
 const Expenses = () => {
   const { user, canEdit, isAdmin } = useAuth();
   const { logAction } = useAuditLog();
+  const { toUSD } = useSettings();
   const [entries, setEntries] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [sellers, setSellers] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [editItem, setEditItem] = useState<any>(null);
   const [search, setSearch] = useState('');
@@ -31,10 +33,10 @@ const Expenses = () => {
   const [filterCategory, setFilterCategory] = useState('all');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<any>(null);
-  const [form, setForm] = useState({ date: format(new Date(), 'yyyy-MM-dd'), amount: '', account_id: '', category: '', description: '', ad_platform: '', notes: '' });
+  const [form, setForm] = useState({ date: format(new Date(), 'yyyy-MM-dd'), amount: '', account_id: '', category: '', description: '', seller_id: 'none', notes: '' });
 
   const fetchData = async () => {
-    let q = supabase.from('expense_entries').select('*, accounts(name), profiles:created_by(full_name)').order('date', { ascending: false });
+    let q = supabase.from('expense_entries').select('*, accounts(name, currency), profiles:created_by(full_name), sellers(name)').order('date', { ascending: false });
     if (filterAccount && filterAccount !== 'all') q = q.eq('account_id', filterAccount);
     if (filterCategory && filterCategory !== 'all') q = q.eq('category', filterCategory);
     const { data } = await q;
@@ -46,7 +48,12 @@ const Expenses = () => {
     setAccounts(data || []);
   };
 
-  useEffect(() => { fetchData(); fetchAccounts(); }, [filterAccount, filterCategory]);
+  const fetchSellers = async () => {
+    const { data } = await supabase.from('sellers').select('*').eq('status', 'active').order('name');
+    setSellers(data || []);
+  };
+
+  useEffect(() => { fetchData(); fetchAccounts(); fetchSellers(); }, [filterAccount, filterCategory]);
 
   const uploadReceipt = async (): Promise<string | null> => {
     if (!receiptFile) return editItem?.receipt_url || null;
@@ -86,7 +93,7 @@ const Expenses = () => {
       description: form.description || null,
       created_by: user.id,
       receipt_url,
-      ad_platform: form.category === 'Ads' ? form.ad_platform || null : null,
+      seller_id: form.seller_id && form.seller_id !== 'none' ? form.seller_id : null,
       notes: form.notes || null,
     };
 
@@ -113,7 +120,7 @@ const Expenses = () => {
     setOpen(false);
     setEditItem(null);
     setReceiptFile(null);
-    setForm({ date: format(new Date(), 'yyyy-MM-dd'), amount: '', account_id: '', category: '', description: '', ad_platform: '', notes: '' });
+    setForm({ date: format(new Date(), 'yyyy-MM-dd'), amount: '', account_id: '', category: '', description: '', seller_id: 'none', notes: '' });
   };
 
   const openEdit = (item: any) => {
@@ -124,7 +131,7 @@ const Expenses = () => {
       account_id: item.account_id,
       category: item.category,
       description: item.description || '',
-      ad_platform: item.ad_platform || '',
+      seller_id: item.seller_id || 'none',
       notes: item.notes || '',
     });
     setOpen(true);
@@ -134,7 +141,7 @@ const Expenses = () => {
     (e.description || '').toLowerCase().includes(search.toLowerCase()) ||
     (e.category || '').toLowerCase().includes(search.toLowerCase()) ||
     (e.accounts?.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (e.ad_platform || '').toLowerCase().includes(search.toLowerCase())
+    (e.sellers?.name || '').toLowerCase().includes(search.toLowerCase())
   );
 
   const handleDeleteEntry = async (item: any) => {
@@ -154,12 +161,23 @@ const Expenses = () => {
 
   const columns = [
     { key: 'date', label: 'Date' },
-    { key: 'amount', label: 'Amount', render: (r: any) => `$${Number(r.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}` },
-    { key: 'account', label: 'Account', render: (r: any) => r.accounts?.name || '-' },
-    { key: 'category', label: 'Category', render: (r: any) => {
-      if (r.category === 'Ads' && r.ad_platform) return `Ads (${r.ad_platform})`;
-      return r.category;
+    { key: 'amount', label: 'Amount', render: (r: any) => {
+      const currency = r.accounts?.currency || 'USD';
+      const amt = Number(r.amount);
+      if (currency !== 'USD') {
+        const usd = toUSD(amt, currency);
+        return (
+          <span className="flex flex-col leading-tight">
+            <span className="font-medium">{amt.toLocaleString('en-US', { minimumFractionDigits: 2 })} {currency}</span>
+            <span className="text-xs text-muted-foreground">≈ ${usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          </span>
+        );
+      }
+      return `$${amt.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
     }},
+    { key: 'account', label: 'Account', render: (r: any) => r.accounts?.name || '-' },
+    { key: 'category', label: 'Category' },
+    { key: 'seller', label: 'Seller', render: (r: any) => r.sellers?.name || '-' },
     { key: 'description', label: 'Description', render: (r: any) => r.description || '-' },
     { key: 'notes', label: 'Notes', render: (r: any) => r.notes || '-' },
     { key: 'receipt', label: 'Receipt', render: (r: any) => r.receipt_url ? (
@@ -186,7 +204,8 @@ const Expenses = () => {
     date: r.date,
     amount: r.amount,
     account: r.accounts?.name || '',
-    category: r.category === 'Ads' && r.ad_platform ? `Ads (${r.ad_platform})` : r.category,
+    category: r.category,
+    seller: r.sellers?.name || '',
     description: r.description || '',
     notes: r.notes || '',
     created_by: r.profiles?.full_name || '',
@@ -196,6 +215,7 @@ const Expenses = () => {
     { key: 'amount', label: 'Amount' },
     { key: 'account', label: 'Account' },
     { key: 'category', label: 'Category' },
+    { key: 'seller', label: 'Seller' },
     { key: 'description', label: 'Description' },
     { key: 'notes', label: 'Notes' },
     { key: 'created_by', label: 'Created By' },
@@ -229,8 +249,16 @@ const Expenses = () => {
                       <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required />
                     </div>
                     <div className="space-y-2">
-                      <Label>Amount ($)</Label>
+                      <Label>Amount ({accounts.find(a => a.id === form.account_id)?.currency || 'USD'})</Label>
                       <Input type="number" step="0.01" min="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required />
+                      {(() => {
+                        const acc = accounts.find(a => a.id === form.account_id);
+                        if (acc?.currency && acc.currency !== 'USD' && form.amount) {
+                          const usd = toUSD(Number(form.amount), acc.currency);
+                          return <p className="text-xs text-muted-foreground">≈ ${usd.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD</p>;
+                        }
+                        return null;
+                      })()}
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -244,24 +272,23 @@ const Expenses = () => {
                   </div>
                   <div className="space-y-2">
                     <Label>Category</Label>
-                    <Select value={form.category} onValueChange={v => setForm({ ...form, category: v, ad_platform: v !== 'Ads' ? '' : form.ad_platform })}>
+                    <Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}>
                       <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                       <SelectContent>
                         {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
-                  {form.category === 'Ads' && (
-                    <div className="space-y-2">
-                      <Label>Ad Platform</Label>
-                      <Select value={form.ad_platform} onValueChange={v => setForm({ ...form, ad_platform: v })}>
-                        <SelectTrigger><SelectValue placeholder="Select platform" /></SelectTrigger>
-                        <SelectContent>
-                          {AD_PLATFORMS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label>Seller {form.category === 'Debit Seller' && <span className="text-destructive">*</span>}</Label>
+                    <Select value={form.seller_id} onValueChange={v => setForm({ ...form, seller_id: v })}>
+                      <SelectTrigger><SelectValue placeholder="Select seller (optional)" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— None —</SelectItem>
+                        {sellers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="space-y-2">
                     <Label>Description</Label>
                     <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />

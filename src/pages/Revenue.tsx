@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuditLog } from '@/hooks/useAuditLog';
+import { useSettings } from '@/hooks/useSettings';
 import { DataTable } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,23 +17,25 @@ import { Plus, Search, Download, Pencil, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { exportToCSV, exportToExcel } from '@/lib/exportUtils';
 
-const CATEGORIES = ['Shipping Company Payout', 'Sourcing', 'Other'];
+const CATEGORIES = ['Seller Payment'];
 
 const Revenue = () => {
   const { user, canEdit, isAdmin } = useAuth();
   const { logAction } = useAuditLog();
+  const { toUSD, rates } = useSettings();
   const [entries, setEntries] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [sellers, setSellers] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [editItem, setEditItem] = useState<any>(null);
   const [search, setSearch] = useState('');
   const [filterAccount, setFilterAccount] = useState('all');
   const [filterMonth, setFilterMonth] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<any>(null);
-  const [form, setForm] = useState({ date: format(new Date(), 'yyyy-MM-dd'), amount: '', account_id: '', category: CATEGORIES[0], description: '', notes: '' });
+  const [form, setForm] = useState({ date: format(new Date(), 'yyyy-MM-dd'), amount: '', account_id: '', category: CATEGORIES[0], description: '', seller_id: 'none', notes: '' });
 
   const fetchData = async () => {
-    let q = supabase.from('revenue_entries').select('*, accounts(name), profiles:created_by(full_name)').order('date', { ascending: false });
+    let q = supabase.from('revenue_entries').select('*, accounts(name, currency), profiles:created_by(full_name), sellers(name)').order('date', { ascending: false });
     if (filterAccount && filterAccount !== 'all') q = q.eq('account_id', filterAccount);
     if (filterMonth) {
       const [y, m] = filterMonth.split('-');
@@ -47,7 +50,12 @@ const Revenue = () => {
     setAccounts(data || []);
   };
 
-  useEffect(() => { fetchData(); fetchAccounts(); }, [filterAccount, filterMonth]);
+  const fetchSellers = async () => {
+    const { data } = await supabase.from('sellers').select('*').eq('status', 'active').order('name');
+    setSellers(data || []);
+  };
+
+  useEffect(() => { fetchData(); fetchAccounts(); fetchSellers(); }, [filterAccount, filterMonth]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,6 +67,7 @@ const Revenue = () => {
       category: form.category,
       description: form.description || null,
       created_by: user.id,
+      seller_id: form.seller_id && form.seller_id !== 'none' ? form.seller_id : null,
       notes: form.notes || null,
     };
     
@@ -79,20 +88,21 @@ const Revenue = () => {
     }
     setOpen(false);
     setEditItem(null);
-    setForm({ date: format(new Date(), 'yyyy-MM-dd'), amount: '', account_id: '', category: CATEGORIES[0], description: '', notes: '' });
+    setForm({ date: format(new Date(), 'yyyy-MM-dd'), amount: '', account_id: '', category: CATEGORIES[0], description: '', seller_id: 'none', notes: '' });
     fetchData();
   };
 
   const openEdit = (item: any) => {
     setEditItem(item);
-    setForm({ date: item.date, amount: String(item.amount), account_id: item.account_id, category: item.category, description: item.description || '', notes: item.notes || '' });
+    setForm({ date: item.date, amount: String(item.amount), account_id: item.account_id, category: item.category, description: item.description || '', seller_id: item.seller_id || 'none', notes: item.notes || '' });
     setOpen(true);
   };
 
   const filtered = entries.filter(e =>
     (e.description || '').toLowerCase().includes(search.toLowerCase()) ||
     (e.category || '').toLowerCase().includes(search.toLowerCase()) ||
-    (e.accounts?.name || '').toLowerCase().includes(search.toLowerCase())
+    (e.accounts?.name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (e.sellers?.name || '').toLowerCase().includes(search.toLowerCase())
   );
 
   const handleDelete = async (item: any) => {
@@ -105,9 +115,23 @@ const Revenue = () => {
 
   const columns = [
     { key: 'date', label: 'Date' },
-    { key: 'amount', label: 'Amount', render: (r: any) => `$${Number(r.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}` },
+    { key: 'amount', label: 'Amount', render: (r: any) => {
+      const currency = r.accounts?.currency || 'USD';
+      const amt = Number(r.amount);
+      if (currency !== 'USD') {
+        const usd = toUSD(amt, currency);
+        return (
+          <span className="flex flex-col leading-tight">
+            <span className="font-medium">{amt.toLocaleString('en-US', { minimumFractionDigits: 2 })} {currency}</span>
+            <span className="text-xs text-muted-foreground">≈ ${usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          </span>
+        );
+      }
+      return `$${amt.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+    }},
     { key: 'account', label: 'Account', render: (r: any) => r.accounts?.name || '-' },
     { key: 'category', label: 'Category' },
+    { key: 'seller', label: 'Seller', render: (r: any) => r.sellers?.name || '-' },
     { key: 'description', label: 'Description', render: (r: any) => r.description || '-' },
     { key: 'notes', label: 'Notes', render: (r: any) => r.notes || '-' },
     { key: 'created_by', label: 'Created By', render: (r: any) => r.profiles?.full_name || '-' },
@@ -130,6 +154,7 @@ const Revenue = () => {
     amount: r.amount,
     account: r.accounts?.name || '',
     category: r.category,
+    seller: r.sellers?.name || '',
     description: r.description || '',
     notes: r.notes || '',
     created_by: r.profiles?.full_name || '',
@@ -139,6 +164,7 @@ const Revenue = () => {
     { key: 'amount', label: 'Amount' },
     { key: 'account', label: 'Account' },
     { key: 'category', label: 'Category' },
+    { key: 'seller', label: 'Seller' },
     { key: 'description', label: 'Description' },
     { key: 'notes', label: 'Notes' },
     { key: 'created_by', label: 'Created By' },
@@ -159,7 +185,7 @@ const Revenue = () => {
             </DropdownMenuContent>
           </DropdownMenu>
           {canEdit && (
-            <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEditItem(null); setForm({ date: format(new Date(), 'yyyy-MM-dd'), amount: '', account_id: '', category: CATEGORIES[0], description: '', notes: '' }); } }}>
+            <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEditItem(null); setForm({ date: format(new Date(), 'yyyy-MM-dd'), amount: '', account_id: '', category: CATEGORIES[0], description: '', seller_id: 'none', notes: '' }); } }}>
               <DialogTrigger asChild>
                 <Button><Plus className="h-4 w-4 mr-2" />Add Revenue</Button>
               </DialogTrigger>
@@ -172,8 +198,16 @@ const Revenue = () => {
                       <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required />
                     </div>
                     <div className="space-y-2">
-                      <Label>Amount ($)</Label>
+                      <Label>Amount ({accounts.find(a => a.id === form.account_id)?.currency || 'USD'})</Label>
                       <Input type="number" step="0.01" min="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required />
+                      {(() => {
+                        const acc = accounts.find(a => a.id === form.account_id);
+                        if (acc?.currency && acc.currency !== 'USD' && form.amount) {
+                          const usd = toUSD(Number(form.amount), acc.currency);
+                          return <p className="text-xs text-muted-foreground">≈ ${usd.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD</p>;
+                        }
+                        return null;
+                      })()}
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -191,6 +225,16 @@ const Revenue = () => {
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Seller</Label>
+                    <Select value={form.seller_id} onValueChange={v => setForm({ ...form, seller_id: v })}>
+                      <SelectTrigger><SelectValue placeholder="Select seller (optional)" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— None —</SelectItem>
+                        {sellers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
