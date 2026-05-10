@@ -81,17 +81,14 @@ const UsersPage = () => {
 
       toast.success('User updated');
     } else {
-      // Create new user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: form.email,
-        password: form.password,
-        options: { data: { full_name: form.full_name } },
+      // Create new user via Edge Function (email auto-confirmed, no confirmation email)
+      const { data, error: fnError } = await supabase.functions.invoke('create-user', {
+        body: { email: form.email, password: form.password, full_name: form.full_name, role: form.role },
       });
-      if (authError || !authData.user) { toast.error(authError?.message || 'Failed to create user'); return; }
+      if (fnError || data?.error) { toast.error(data?.error || fnError?.message || 'Failed to create user'); return; }
 
-      await supabase.from('user_roles').insert({ user_id: authData.user.id, role: form.role as any });
-      await logAction({ action: 'create', entity: 'user', entityId: authData.user.id, details: `User: ${form.full_name}, Role: ${form.role}` });
-      toast.success('User created');
+      await logAction({ action: 'create', entity: 'user', entityId: data.user.id, details: `User: ${form.full_name}, Role: ${form.role}` });
+      toast.success('User created — can log in immediately');
     }
     resetForm();
     fetchUsers();

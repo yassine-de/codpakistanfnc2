@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useSettings } from '@/hooks/useSettings';
 import { KpiCard } from '@/components/KpiCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { TrendingUp, TrendingDown, DollarSign, Wallet, CreditCard, CalendarIcon } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Wallet, CreditCard, CalendarIcon, Users } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
 import { format, startOfMonth, endOfMonth, startOfYear, subDays, subMonths } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -48,6 +49,7 @@ const AD_COLORS: Record<string, string> = {
 };
 
 const Dashboard = () => {
+  const { toUSD } = useSettings();
   const [preset, setPreset] = useState<DatePreset>('this_month');
   const [dateFrom, setDateFrom] = useState<Date | undefined>(startOfMonth(new Date()));
   const [dateTo, setDateTo] = useState<Date | undefined>(new Date());
@@ -63,7 +65,7 @@ const Dashboard = () => {
   const [stats, setStats] = useState({
     revenueFiltered: 0, expensesFiltered: 0, totalBalance: 0, unpaidDebts: 0, profitLastMonth: 0,
   });
-  const [accountBalances, setAccountBalances] = useState<{ name: string; balance: number }[]>([]);
+  const [accountBalances, setAccountBalances] = useState<{ name: string; balance: number; currency: string; balanceUSD: number }[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const [expenseCategoryData, setExpenseCategoryData] = useState<any[]>([]);
   const [adSpendData, setAdSpendData] = useState<any[]>([]);
@@ -76,28 +78,33 @@ const Dashboard = () => {
       const toStr = dateTo ? format(dateTo, 'yyyy-MM-dd') : '2099-12-31';
 
       const [revFiltered, expFiltered, accounts, debts, allRev, allExp] = await Promise.all([
-        supabase.from('revenue_entries').select('amount').gte('date', fromStr).lte('date', toStr),
-        supabase.from('expense_entries').select('amount, category, ad_platform').gte('date', fromStr).lte('date', toStr),
+        supabase.from('revenue_entries').select('amount, account_id, accounts(currency)').gte('date', fromStr).lte('date', toStr),
+        supabase.from('expense_entries').select('amount, category, ad_platform, account_id, accounts(currency)').gte('date', fromStr).lte('date', toStr),
         supabase.from('accounts').select('*').eq('status', 'active'),
         supabase.from('seller_debts').select('*').eq('status', 'unpaid'),
-        supabase.from('revenue_entries').select('amount, account_id'),
-        supabase.from('expense_entries').select('amount, account_id'),
+        supabase.from('revenue_entries').select('amount, account_id, accounts(currency)'),
+        supabase.from('expense_entries').select('amount, account_id, accounts(currency)'),
       ]);
 
-      const sum = (data: any[] | null) => (data || []).reduce((s, r) => s + Number(r.amount), 0);
-      const revFilteredSum = sum(revFiltered.data);
-      const expFilteredSum = sum(expFiltered.data);
-      const unpaidSum = sum(debts.data);
+      // Convert amount to USD based on account currency
+      const toUSDAmount = (amount: number, currency: string) => toUSD(amount, currency);
+      const sumUSD = (data: any[] | null) =>
+        (data || []).reduce((s, r) => s + toUSDAmount(Number(r.amount), (r.accounts as any)?.currency || 'USD'), 0);
 
-      // Account balances
-      const accBals: { name: string; balance: number }[] = [];
+      const revFilteredSum = sumUSD(revFiltered.data);
+      const expFilteredSum = sumUSD(expFiltered.data);
+      const unpaidSum = (debts.data || []).reduce((s: number, r: any) => s + Number(r.amount), 0);
+
+      // Account balances — keep in native currency, convert to USD for total
+      const accBals: { name: string; balance: number; currency: string; balanceUSD: number }[] = [];
       let totalBal = 0;
       (accounts.data || []).forEach(acc => {
         const accRev = (allRev.data || []).filter(r => r.account_id === acc.id).reduce((s: number, r: any) => s + Number(r.amount), 0);
         const accExp = (allExp.data || []).filter(r => r.account_id === acc.id).reduce((s: number, r: any) => s + Number(r.amount), 0);
-        const bal = Number(acc.opening_balance) + accRev - accExp;
-        totalBal += bal;
-        accBals.push({ name: acc.name, balance: bal });
+        const balNative = Number(acc.opening_balance || 0) + accRev - accExp;
+        const balUSD = toUSD(balNative, acc.currency || 'USD');
+        totalBal += balUSD;
+        accBals.push({ name: acc.name, balance: balNative, currency: acc.currency || 'USD', balanceUSD: balUSD });
       });
       setAccountBalances(accBals);
 
@@ -123,10 +130,10 @@ const Dashboard = () => {
       const lmStart = format(startOfMonth(lastMonth), 'yyyy-MM-dd');
       const lmEnd = format(endOfMonth(lastMonth), 'yyyy-MM-dd');
       const [revLM, expLM] = await Promise.all([
-        supabase.from('revenue_entries').select('amount').gte('date', lmStart).lte('date', lmEnd),
-        supabase.from('expense_entries').select('amount').gte('date', lmStart).lte('date', lmEnd),
+        supabase.from('revenue_entries').select('amount, accounts(currency)').gte('date', lmStart).lte('date', lmEnd),
+        supabase.from('expense_entries').select('amount, accounts(currency)').gte('date', lmStart).lte('date', lmEnd),
       ]);
-      const profitLM = sum(revLM.data) - sum(expLM.data);
+      const profitLM = sumUSD(revLM.data) - sumUSD(expLM.data);
 
       setStats({ revenueFiltered: revFilteredSum, expensesFiltered: expFilteredSum, totalBalance: totalBal, unpaidDebts: unpaidSum, profitLastMonth: profitLM });
       setUnpaidDebtsList((debts.data || []).slice(0, 5));
@@ -139,10 +146,10 @@ const Dashboard = () => {
         const me = format(endOfMonth(d), 'yyyy-MM-dd');
         const label = format(d, 'MMM yyyy');
         const [mr, me2] = await Promise.all([
-          supabase.from('revenue_entries').select('amount').gte('date', ms).lte('date', me),
-          supabase.from('expense_entries').select('amount').gte('date', ms).lte('date', me),
+          supabase.from('revenue_entries').select('amount, accounts(currency)').gte('date', ms).lte('date', me),
+          supabase.from('expense_entries').select('amount, accounts(currency)').gte('date', ms).lte('date', me),
         ]);
-        chartMonths.push({ month: label, Revenue: sum(mr.data), Expenses: sum(me2.data) });
+        chartMonths.push({ month: label, Revenue: sumUSD(mr.data), Expenses: sumUSD(me2.data) });
       }
       setChartData(chartMonths);
 
@@ -210,23 +217,49 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Total Balance */}
+      {/* Total Capital */}
       <Card className="shadow-card">
         <CardContent className="pt-6">
           <div className="text-center mb-4">
-            <p className="text-sm text-muted-foreground mb-1">Total Balance</p>
-            <p className="text-4xl font-bold tracking-tight">{fmt(stats.totalBalance)}</p>
+            <p className="text-sm text-muted-foreground mb-1">Total Capital</p>
+            <p className="text-4xl font-bold tracking-tight">{fmt(stats.totalBalance + stats.unpaidDebts)}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Accounts {fmt(stats.totalBalance)} + Seller Credit {fmt(stats.unpaidDebts)}
+            </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
             {accountBalances.map(acc => (
               <div key={acc.name} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                 <div className="flex items-center gap-2">
                   <CreditCard className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">{acc.name}</span>
                 </div>
-                <span className="text-sm font-semibold">{fmt(acc.balance)}</span>
+                <div className="text-right">
+                  {acc.currency !== 'USD' ? (
+                    <>
+                      <p className="text-sm font-semibold">
+                        {acc.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })} {acc.currency}
+                      </p>
+                      <p className="text-xs text-muted-foreground">≈ {fmt(acc.balanceUSD)}</p>
+                    </>
+                  ) : (
+                    <p className="text-sm font-semibold">{fmt(acc.balance)}</p>
+                  )}
+                </div>
               </div>
             ))}
+            {stats.unpaidDebts > 0 && (
+              <div className="flex items-center justify-between p-3 rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-950/20 dark:border-amber-800">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-amber-600" />
+                  <span className="text-sm font-medium text-amber-700 dark:text-amber-400">Seller Credit</span>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">{fmt(stats.unpaidDebts)}</p>
+                  <p className="text-xs text-amber-600/70">outstanding</p>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

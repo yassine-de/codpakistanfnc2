@@ -20,6 +20,7 @@ import HistoryPage from "./pages/HistoryPage";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
 import Sellers from "./pages/Sellers";
+import Sourcing from "./pages/Sourcing";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -54,6 +55,7 @@ const AppRoutes = () => (
     <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
     <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
     <Route path="/sellers" element={<ProtectedRoute><Sellers /></ProtectedRoute>} />
+    <Route path="/sourcing" element={<ProtectedRoute><Sourcing /></ProtectedRoute>} />
     <Route path="*" element={<NotFound />} />
   </Routes>
 );

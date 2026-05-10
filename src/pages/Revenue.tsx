@@ -13,9 +13,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Search, Download, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search, Download, Pencil, Trash2, History } from 'lucide-react';
 import { format } from 'date-fns';
 import { exportToCSV, exportToExcel } from '@/lib/exportUtils';
+import { SourcingBadge } from '@/components/SourcingBadge';
+import { EntryHistory } from '@/components/EntryHistory';
 
 const CATEGORIES = ['Seller Payment'];
 
@@ -30,13 +32,16 @@ const Revenue = () => {
   const [editItem, setEditItem] = useState<any>(null);
   const [search, setSearch] = useState('');
   const [filterAccount, setFilterAccount] = useState('all');
+  const [filterSeller, setFilterSeller] = useState('all');
   const [filterMonth, setFilterMonth] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<any>(null);
+  const [historyItem, setHistoryItem] = useState<any>(null);
   const [form, setForm] = useState({ date: format(new Date(), 'yyyy-MM-dd'), amount: '', account_id: '', category: CATEGORIES[0], description: '', seller_id: 'none', notes: '' });
 
   const fetchData = async () => {
-    let q = supabase.from('revenue_entries').select('*, accounts(name, currency), profiles:created_by(full_name), sellers(name)').order('date', { ascending: false });
+    let q = supabase.from('revenue_entries').select('*, accounts(name, currency), profiles:created_by(full_name), sellers(name), sourcing_id').order('date', { ascending: false });
     if (filterAccount && filterAccount !== 'all') q = q.eq('account_id', filterAccount);
+    if (filterSeller && filterSeller !== 'all') q = q.eq('seller_id', filterSeller);
     if (filterMonth) {
       const [y, m] = filterMonth.split('-');
       q = q.gte('date', `${y}-${m}-01`).lte('date', `${y}-${m}-31`);
@@ -55,7 +60,7 @@ const Revenue = () => {
     setSellers(data || []);
   };
 
-  useEffect(() => { fetchData(); fetchAccounts(); fetchSellers(); }, [filterAccount, filterMonth]);
+  useEffect(() => { fetchData(); fetchAccounts(); fetchSellers(); }, [filterAccount, filterSeller, filterMonth]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,20 +138,27 @@ const Revenue = () => {
     { key: 'category', label: 'Category' },
     { key: 'seller', label: 'Seller', render: (r: any) => r.sellers?.name || '-' },
     { key: 'description', label: 'Description', render: (r: any) => r.description || '-' },
-    { key: 'notes', label: 'Notes', render: (r: any) => r.notes || '-' },
+    { key: 'notes', label: 'Notes', render: (r: any) => r.sourcing_id
+      ? <SourcingBadge sourcingId={r.sourcing_id} shortRef={r.notes} />
+      : (r.notes || '-') },
     { key: 'created_by', label: 'Created By', render: (r: any) => r.profiles?.full_name || '-' },
-    ...(canEdit ? [{
-      key: 'actions', label: 'Actions', render: (r: any) => (
-        <div className="flex items-center gap-1">
+    { key: 'actions', label: 'Actions', render: (r: any) => (
+      <div className="flex items-center gap-1">
+        {canEdit && (
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e: React.MouseEvent) => { e.stopPropagation(); openEdit(r); }}>
             <Pencil className="h-4 w-4" />
           </Button>
+        )}
+        {canEdit && (
           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={(e: React.MouseEvent) => { e.stopPropagation(); setDeleteConfirm(r); }}>
             <Trash2 className="h-4 w-4" />
           </Button>
-        </div>
-      ),
-    }] : []),
+        )}
+        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={(e: React.MouseEvent) => { e.stopPropagation(); setHistoryItem(r); }}>
+          <History className="h-4 w-4" />
+        </Button>
+      </div>
+    )},
   ];
 
   const exportData = filtered.map(r => ({
@@ -259,6 +271,13 @@ const Revenue = () => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
         </div>
+        <Select value={filterSeller} onValueChange={setFilterSeller}>
+          <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="All Sellers" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sellers</SelectItem>
+            {sellers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Select value={filterAccount} onValueChange={setFilterAccount}>
           <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="All Accounts" /></SelectTrigger>
           <SelectContent>
@@ -270,6 +289,13 @@ const Revenue = () => {
       </div>
 
       <DataTable columns={columns} data={filtered} onRowClick={canEdit ? openEdit : undefined} />
+
+      <EntryHistory
+        entityId={historyItem?.id || null}
+        entityLabel={historyItem ? `${historyItem.date} · $${Number(historyItem.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}
+        open={!!historyItem}
+        onClose={() => setHistoryItem(null)}
+      />
 
       <AlertDialog open={!!deleteConfirm} onOpenChange={(v) => { if (!v) setDeleteConfirm(null); }}>
         <AlertDialogContent>

@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, TrendingUp, TrendingDown, Wallet, Users, FileText, History, CreditCard, LogOut, User, Settings, Store,
+  LayoutDashboard, TrendingUp, TrendingDown, Wallet, Users, FileText, History, CreditCard, LogOut, User, Settings, Store, PackageSearch,
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useLocation } from 'react-router-dom';
@@ -11,6 +11,7 @@ import {
 
 const mainItems = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard },
+  { title: 'Sourcing', url: '/sourcing', icon: PackageSearch },
   { title: 'Revenue', url: '/revenue', icon: TrendingUp },
   { title: 'Expenses', url: '/expenses', icon: TrendingDown },
   { title: 'Accounts', url: '/accounts', icon: Wallet },
@@ -38,9 +39,10 @@ export function AppSidebar() {
       <SidebarContent>
         <div className="px-4 py-5">
           {!collapsed && (
-            <h1 className="text-lg font-bold text-sidebar-foreground tracking-tight">
-              COD Finance
-            </h1>
+            <div>
+              <h1 className="text-lg font-bold text-sidebar-foreground tracking-tight">COD Finance</h1>
+              <p className="text-lg font-bold tracking-widest text-red-500 uppercase">Service</p>
+            </div>
           )}
         </div>
 

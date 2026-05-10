@@ -28,6 +28,7 @@ const Login = () => {
         <CardHeader className="text-center space-y-2">
           
           <CardTitle className="text-2xl font-bold">COD Finance</CardTitle>
+          <p className="text-2xl font-bold tracking-widest text-red-500 uppercase">Service</p>
           <p className="text-muted-foreground">Sign in to your account</p>
         </CardHeader>
         <CardContent>

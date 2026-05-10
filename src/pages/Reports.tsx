@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useSettings } from '@/hooks/useSettings';
 import { KpiCard } from '@/components/KpiCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -26,6 +27,8 @@ const AD_COLORS: Record<string, string> = {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const Reports = () => {
+  const { toUSD } = useSettings();
+  const sumUSD = (data: any[]) => data.reduce((s, r) => s + toUSD(Number(r.amount), r.accounts?.currency || 'USD'), 0);
   const [viewMode, setViewMode] = useState<'monthly' | 'yearly'>('monthly');
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [year, setYear] = useState(String(new Date().getFullYear()));
@@ -50,13 +53,13 @@ const Reports = () => {
   }, [month, year, filterAccount, filterCategory, viewMode]);
 
   const fetchAdSpend = async (startDate: string, endDate: string) => {
-    let q = supabase.from('expense_entries').select('amount, ad_platform').eq('category', 'Ads').gte('date', startDate).lte('date', endDate);
+    let q = supabase.from('expense_entries').select('amount, ad_platform, accounts(currency)').eq('category', 'Ads').gte('date', startDate).lte('date', endDate);
     if (filterAccount !== 'all') q = q.eq('account_id', filterAccount);
     const { data } = await q;
     const platformMap: Record<string, number> = {};
     (data || []).forEach((r: any) => {
       const platform = r.ad_platform || 'Other';
-      platformMap[platform] = (platformMap[platform] || 0) + Number(r.amount);
+      platformMap[platform] = (platformMap[platform] || 0) + toUSD(Number(r.amount), r.accounts?.currency || 'USD');
     });
     setAdSpendData(Object.entries(platformMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value));
   };
@@ -66,16 +69,16 @@ const Reports = () => {
     const ms = `${y}-${m}-01`;
     const me = format(endOfMonth(new Date(Number(y), Number(m) - 1, 1)), 'yyyy-MM-dd');
 
-    let revQ = supabase.from('revenue_entries').select('amount, category').gte('date', ms).lte('date', me);
-    let expQ = supabase.from('expense_entries').select('amount, category').gte('date', ms).lte('date', me);
+    let revQ = supabase.from('revenue_entries').select('amount, category, accounts(currency)').gte('date', ms).lte('date', me);
+    let expQ = supabase.from('expense_entries').select('amount, category, accounts(currency)').gte('date', ms).lte('date', me);
     if (filterAccount !== 'all') { revQ = revQ.eq('account_id', filterAccount); expQ = expQ.eq('account_id', filterAccount); }
     if (filterCategory !== 'all') { expQ = expQ.eq('category', filterCategory); }
 
     const [rev, exp] = await Promise.all([revQ, expQ]);
     const revData = rev.data || [];
     const expData = exp.data || [];
-    setTotalRev(revData.reduce((s, r) => s + Number(r.amount), 0));
-    setTotalExp(expData.reduce((s, r) => s + Number(r.amount), 0));
+    setTotalRev(sumUSD(revData));
+    setTotalExp(sumUSD(expData));
     buildCategoryBreakdowns(revData, expData);
     fetchAdSpend(ms, me);
 
@@ -86,14 +89,14 @@ const Reports = () => {
       const tms = format(d, 'yyyy-MM-dd');
       const tme = format(endOfMonth(d), 'yyyy-MM-dd');
       const label = format(d, 'MMM');
-      let rq = supabase.from('revenue_entries').select('amount').gte('date', tms).lte('date', tme);
-      let eq = supabase.from('expense_entries').select('amount').gte('date', tms).lte('date', tme);
+      let rq = supabase.from('revenue_entries').select('amount, accounts(currency)').gte('date', tms).lte('date', tme);
+      let eq = supabase.from('expense_entries').select('amount, accounts(currency)').gte('date', tms).lte('date', tme);
       if (filterAccount !== 'all') { rq = rq.eq('account_id', filterAccount); eq = eq.eq('account_id', filterAccount); }
       const [tr, te] = await Promise.all([rq, eq]);
       trends.push({
         month: label,
-        Revenue: (tr.data || []).reduce((s, r) => s + Number(r.amount), 0),
-        Expenses: (te.data || []).reduce((s, r) => s + Number(r.amount), 0),
+        Revenue: sumUSD(tr.data || []),
+        Expenses: sumUSD(te.data || []),
       });
     }
     setTrendData(trends);
@@ -103,22 +106,22 @@ const Reports = () => {
     const ys = `${year}-01-01`;
     const ye = `${year}-12-31`;
 
-    let revQ = supabase.from('revenue_entries').select('amount, category, date').gte('date', ys).lte('date', ye);
-    let expQ = supabase.from('expense_entries').select('amount, category, date').gte('date', ys).lte('date', ye);
+    let revQ = supabase.from('revenue_entries').select('amount, category, date, accounts(currency)').gte('date', ys).lte('date', ye);
+    let expQ = supabase.from('expense_entries').select('amount, category, date, accounts(currency)').gte('date', ys).lte('date', ye);
     if (filterAccount !== 'all') { revQ = revQ.eq('account_id', filterAccount); expQ = expQ.eq('account_id', filterAccount); }
     if (filterCategory !== 'all') { expQ = expQ.eq('category', filterCategory); }
 
     const [rev, exp] = await Promise.all([revQ, expQ]);
     const revData = rev.data || [];
     const expData = exp.data || [];
-    setTotalRev(revData.reduce((s, r) => s + Number(r.amount), 0));
-    setTotalExp(expData.reduce((s, r) => s + Number(r.amount), 0));
+    setTotalRev(sumUSD(revData));
+    setTotalExp(sumUSD(expData));
     buildCategoryBreakdowns(revData, expData);
     fetchAdSpend(ys, ye);
 
     const monthlyData = MONTHS.map((label, i) => {
-      const mRev = revData.filter(r => new Date(r.date).getMonth() === i).reduce((s, r) => s + Number(r.amount), 0);
-      const mExp = expData.filter(r => new Date(r.date).getMonth() === i).reduce((s, r) => s + Number(r.amount), 0);
+      const mRev = sumUSD(revData.filter(r => new Date(r.date).getMonth() === i));
+      const mExp = sumUSD(expData.filter(r => new Date(r.date).getMonth() === i));
       return { month: label, Revenue: mRev, Expenses: mExp, Profit: mRev - mExp };
     });
     setYearlyMonthData(monthlyData);
@@ -126,11 +129,11 @@ const Reports = () => {
 
   const buildCategoryBreakdowns = (revData: any[], expData: any[]) => {
     const revCatMap: Record<string, number> = {};
-    revData.forEach(r => { revCatMap[r.category] = (revCatMap[r.category] || 0) + Number(r.amount); });
+    revData.forEach(r => { revCatMap[r.category] = (revCatMap[r.category] || 0) + toUSD(Number(r.amount), r.accounts?.currency || 'USD'); });
     setRevByCat(Object.entries(revCatMap).map(([name, value]) => ({ name, value })));
 
     const expCatMap: Record<string, number> = {};
-    expData.forEach(r => { expCatMap[r.category] = (expCatMap[r.category] || 0) + Number(r.amount); });
+    expData.forEach(r => { expCatMap[r.category] = (expCatMap[r.category] || 0) + toUSD(Number(r.amount), r.accounts?.currency || 'USD'); });
     setExpByCat(Object.entries(expCatMap).map(([name, value]) => ({ name, value })));
   };
 

@@ -13,29 +13,38 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Search, CheckCircle, Download, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search, CheckCircle, Download, Pencil, Trash2, History } from 'lucide-react';
 import { format } from 'date-fns';
 import { exportToCSV, exportToExcel } from '@/lib/exportUtils';
+import { EntryHistory } from '@/components/EntryHistory';
 
 const SellerDebts = () => {
   const { canEdit, isAdmin } = useAuth();
   const { logAction } = useAuditLog();
   const [debts, setDebts] = useState<any[]>([]);
+  const [sellers, setSellers] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [editItem, setEditItem] = useState<any>(null);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterSeller, setFilterSeller] = useState('all');
   const [deleteConfirm, setDeleteConfirm] = useState<any>(null);
+  const [historyItem, setHistoryItem] = useState<any>(null);
   const [form, setForm] = useState({ seller_name: '', amount: '', description: '', status: 'unpaid' as 'paid' | 'unpaid', date: format(new Date(), 'yyyy-MM-dd') });
 
   const fetchData = async () => {
     let q = supabase.from('seller_debts').select('*').order('date', { ascending: false });
     if (filterStatus && filterStatus !== 'all') q = q.eq('status', filterStatus as 'paid' | 'unpaid');
+    if (filterSeller && filterSeller !== 'all') q = q.eq('seller_name', filterSeller);
     const { data } = await q;
     setDebts(data || []);
   };
 
-  useEffect(() => { fetchData(); }, [filterStatus]);
+  useEffect(() => {
+    supabase.from('sellers').select('name').eq('status', 'active').order('name').then(({ data }) => setSellers(data || []));
+  }, []);
+
+  useEffect(() => { fetchData(); }, [filterStatus, filterSeller]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,27 +108,35 @@ const SellerDebts = () => {
     { key: 'amount', label: 'Amount', render: (r: any) => `$${Number(r.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}` },
     { key: 'description', label: 'Description', render: (r: any) => r.description || '-' },
     { key: 'status', label: 'Status', render: (r: any) => (
-      <Badge variant={r.status === 'paid' ? 'default' : 'destructive'}>
-        {r.status}
-      </Badge>
+      <div className="flex flex-col gap-0.5">
+        <Badge variant={r.status === 'paid' ? 'default' : 'destructive'}>
+          {r.status}
+        </Badge>
+        {r.paid_date && <span className="text-xs text-muted-foreground">{r.paid_date}</span>}
+      </div>
     )},
-    ...(canEdit ? [{
-      key: 'actions', label: 'Actions', render: (r: any) => (
-        <div className="flex items-center gap-1">
-          {r.status === 'unpaid' && (
-            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={(e: React.MouseEvent) => { e.stopPropagation(); markPaid(r); }}>
-              <CheckCircle className="h-4 w-4" />
-            </Button>
-          )}
+    { key: 'actions', label: 'Actions', render: (r: any) => (
+      <div className="flex items-center gap-1">
+        {canEdit && r.status === 'unpaid' && (
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={(e: React.MouseEvent) => { e.stopPropagation(); markPaid(r); }}>
+            <CheckCircle className="h-4 w-4" />
+          </Button>
+        )}
+        {canEdit && (
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e: React.MouseEvent) => { e.stopPropagation(); openEdit(r); }}>
             <Pencil className="h-4 w-4" />
           </Button>
+        )}
+        {canEdit && (
           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={(e: React.MouseEvent) => { e.stopPropagation(); setDeleteConfirm(r); }}>
             <Trash2 className="h-4 w-4" />
           </Button>
-        </div>
-      ),
-    }] : []),
+        )}
+        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={(e: React.MouseEvent) => { e.stopPropagation(); setHistoryItem(r); }}>
+          <History className="h-4 w-4" />
+        </Button>
+      </div>
+    )},
   ];
 
   const exportData = filtered.map(r => ({
@@ -202,6 +219,13 @@ const SellerDebts = () => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search seller..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
         </div>
+        <Select value={filterSeller} onValueChange={setFilterSeller}>
+          <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="All Sellers" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sellers</SelectItem>
+            {sellers.map(s => <SelectItem key={s.name} value={s.name}>{s.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Select value={filterStatus} onValueChange={setFilterStatus}>
           <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="All Status" /></SelectTrigger>
           <SelectContent>
@@ -213,6 +237,13 @@ const SellerDebts = () => {
       </div>
 
       <DataTable columns={columns} data={filtered} onRowClick={canEdit ? openEdit : undefined} />
+
+      <EntryHistory
+        entityId={historyItem?.id || null}
+        entityLabel={historyItem ? `${historyItem.seller_name} · $${Number(historyItem.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}
+        open={!!historyItem}
+        onClose={() => setHistoryItem(null)}
+      />
 
       <AlertDialog open={!!deleteConfirm} onOpenChange={(v) => { if (!v) setDeleteConfirm(null); }}>
         <AlertDialogContent>
