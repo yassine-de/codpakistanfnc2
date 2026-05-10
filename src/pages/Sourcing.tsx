@@ -185,7 +185,7 @@ const Sourcing = () => {
   const paidUSDT    = Number(form.paid_usdt    || 0);  // 1:1 USD
   const paidInvoice = Number(form.paid_invoice || 0);
   const totalPaidUSD = paidUSD + paidMAD + paidUSDT + paidInvoice;
-  const remaining    = ourCost - totalPaidUSD;
+  const remaining    = sellerCost - totalPaidUSD;
   const paymentStatus = totalPaidUSD <= 0 ? 'Unpaid' : remaining <= 0.01 ? 'Paid' : 'Partial';
 
   // Find best matching account by currency, fallback to given accountId
